@@ -440,7 +440,7 @@ class RGBBlock(nn.Module):
         self.input_channel = input_channel
         self.to_style = nn.Linear(latent_dim, input_channel)
 
-        out_filters = 3 if not rgba else 4
+        out_filters = 1 if not rgba else 4
         self.conv = Conv2DMod(input_channel, out_filters, 1, demod=False)
 
         self.upsample = nn.Sequential(
@@ -452,6 +452,7 @@ class RGBBlock(nn.Module):
         b, c, h, w = x.shape
         style = self.to_style(istyle)
         x = self.conv(x, style)
+        x = x.repeat(1,3,1,1) # Repeat 3 times in channel dimension
 
         if exists(prev_rgb):
             x = x + prev_rgb
@@ -506,7 +507,7 @@ class GeneratorBlock(nn.Module):
         self.to_style1 = nn.Linear(latent_dim, input_channels)
         self.to_noise1 = nn.Linear(1, filters)
         self.conv1 = Conv2DMod(input_channels, filters, 3)
-        
+
         self.to_style2 = nn.Linear(latent_dim, filters)
         self.to_noise2 = nn.Linear(1, filters)
         self.conv2 = Conv2DMod(filters, filters, 3)
@@ -901,7 +902,7 @@ class Trainer():
     @property
     def hparams(self):
         return {'image_size': self.image_size, 'network_capacity': self.network_capacity}
-        
+
     def init_GAN(self):
         args, kwargs = self.GAN_params
         self.GAN = StyleGAN2(lr = self.lr, lr_mlp = self.lr_mlp, ttur_mult = self.ttur_mult, image_size = self.image_size, network_capacity = self.network_capacity, fmap_max = self.fmap_max, transparent = self.transparent, fq_layers = self.fq_layers, fq_dict_size = self.fq_dict_size, attn_layers = self.attn_layers, fp16 = self.fp16, cl_reg = self.cl_reg, no_const = self.no_const, rank = self.rank, *args, **kwargs)
@@ -1165,7 +1166,7 @@ class Trainer():
         self.GAN.eval()
         ext = self.image_extension
         num_rows = self.num_image_tiles
-    
+
         latent_dim = self.GAN.G.latent_dim
         image_size = self.GAN.G.image_size
         num_layers = self.GAN.G.num_layers
@@ -1179,7 +1180,7 @@ class Trainer():
 
         generated_images = self.generate_truncated(self.GAN.S, self.GAN.G, latents, n, trunc_psi = self.trunc_psi)
         torchvision.utils.save_image(generated_images, str(self.results_dir / self.name / f'{str(num)}.{ext}'), nrow=num_rows)
-        
+
         # moving averages
 
         generated_images = self.generate_truncated(self.GAN.SE, self.GAN.GE, latents, n, trunc_psi = self.trunc_psi)
@@ -1270,7 +1271,7 @@ class Trainer():
     def truncate_style_defs(self, w, trunc_psi = 0.75):
         w_space = []
         for tensor, num_layers in w:
-            tensor = self.truncate_style(tensor, trunc_psi = trunc_psi)            
+            tensor = self.truncate_style(tensor, trunc_psi = trunc_psi)
             w_space.append((tensor, num_layers))
         return w_space
 
@@ -1307,11 +1308,11 @@ class Trainer():
             generated_images = self.generate_truncated(self.GAN.SE, self.GAN.GE, latents, n, trunc_psi = self.trunc_psi)
             images_grid = torchvision.utils.make_grid(generated_images, nrow = num_rows)
             pil_image = transforms.ToPILImage()(images_grid.cpu())
-            
+
             if self.transparent:
                 background = Image.new("RGBA", pil_image.size, (255, 255, 255))
                 pil_image = Image.alpha_composite(background, pil_image)
-                
+
             frames.append(pil_image)
 
         frames[0].save(str(self.results_dir / self.name / f'{str(num)}.gif'), save_all=True, append_images=frames[1:], duration=80, loop=0, optimize=True)
